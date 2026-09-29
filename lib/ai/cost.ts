@@ -61,6 +61,19 @@ function toNumber(v: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function multiplicadoresDeContexto(
+  modelo: string,
+  tokensEntrada: number,
+): { entrada: number; saida: number } {
+  const id = (modelo.includes("/") ? modelo.slice(modelo.indexOf("/") + 1) : modelo)
+    .replace(/-\d{8}$/, "")
+    .replace(/-\d{4}-\d{2}-\d{2}$/, "")
+    .toLowerCase();
+  return id === "gpt-6-luna" && tokensEntrada > 272_000
+    ? { entrada: 2, saida: 1.5 }
+    : { entrada: 1, saida: 1 };
+}
+
 export interface ComputeCostInput {
   model: string;
   promptTokens?: number;
@@ -116,6 +129,9 @@ async function precoDoCatalogo(
  * Returns cost in **cents** (fracionado, sem arredondar). Zero when pricing missing.
  */
 export async function computeCost(input: ComputeCostInput): Promise<number> {
+  const promptTokens = input.promptTokens ?? 0;
+  const completionTokens = input.completionTokens ?? 0;
+  const multiplicadores = multiplicadoresDeContexto(input.model, promptTokens);
   const pricing = await loadPricing();
   const row = pricing.get(input.model);
   if (!row) {
@@ -125,8 +141,8 @@ export async function computeCost(input: ComputeCostInput): Promise<number> {
     const doCatalogo = await precoDoCatalogo(input.model);
     if (!doCatalogo) return 0;
     const cents =
-      ((input.promptTokens ?? 0) * doCatalogo.prompt) / 1_000_000 +
-      ((input.completionTokens ?? 0) * doCatalogo.completion) / 1_000_000;
+      (promptTokens * doCatalogo.prompt * multiplicadores.entrada) / 1_000_000 +
+      (completionTokens * doCatalogo.completion * multiplicadores.saida) / 1_000_000;
     return cents;
   }
 
@@ -134,13 +150,11 @@ export async function computeCost(input: ComputeCostInput): Promise<number> {
   const completionRate = toNumber(row.completion_cents_per_million_tokens);
   const embeddingRate = toNumber(row.embedding_cents_per_million_tokens);
 
-  const promptTokens = input.promptTokens ?? 0;
-  const completionTokens = input.completionTokens ?? 0;
   const embeddingTokens = input.embeddingTokens ?? 0;
 
   const cents =
-    (promptTokens * promptRate) / 1_000_000 +
-    (completionTokens * completionRate) / 1_000_000 +
+    (promptTokens * promptRate * multiplicadores.entrada) / 1_000_000 +
+    (completionTokens * completionRate * multiplicadores.saida) / 1_000_000 +
     (embeddingTokens * embeddingRate) / 1_000_000;
 
   return cents;

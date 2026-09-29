@@ -80,6 +80,9 @@ const USD_PER_MTOK: Record<string, Preco> = {
   // Preço promocional, válido até pelo menos 21/11/2026; revisar depois.
   'gpt-5.6-sol': { input: 4, output: 20, cacheRead: 0.4, cacheWrite5m: 5, cacheWrite1h: 5 },
   'gpt-5.6-luna': { input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite5m: 0.25, cacheWrite1h: 0.25 },
+  // GPT-6 Luna, tarifa Standard até 272 mil tokens de entrada. Acima desse
+  // limite a OpenAI dobra entrada/cache e multiplica a saída por 1,5.
+  'gpt-6-luna': { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite5m: 0.125, cacheWrite1h: 0.125 },
   'gpt-5.5': { input: 5, output: 30, cacheRead: 0.5, cacheWrite5m: 5, cacheWrite1h: 5 },
   'gpt-5.5-pro': { input: 30, output: 180, cacheRead: 30, cacheWrite5m: 30, cacheWrite1h: 30 },
   'gpt-5.4': { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite5m: 2.5, cacheWrite1h: 2.5 },
@@ -139,13 +142,19 @@ export function costCents(model: string, usage: TokenUsage, cacheTtl: CacheTtl =
   if (p === undefined) {
     return null;
   }
+  const modelId = model.includes('/') ? model.slice(model.indexOf('/') + 1) : model;
+  const modelIdSemData = modelId.replace(/-\d{8}$/, '').replace(/-\d{4}-\d{2}-\d{2}$/, '');
+  const contextoLongoGpt6Luna =
+    modelIdSemData.toLowerCase() === 'gpt-6-luna' && usage.inputTokens > 272_000;
+  const multiplicadorEntrada = contextoLongoGpt6Luna ? 2 : 1;
+  const multiplicadorSaida = contextoLongoGpt6Luna ? 1.5 : 1;
   const cacheWrite = cacheTtl === '5m' ? p.cacheWrite5m : p.cacheWrite1h;
   const noCacheInput = Math.max(0, usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens);
   const usd =
-    (noCacheInput * p.input +
-      usage.cacheReadTokens * p.cacheRead +
-      usage.cacheWriteTokens * cacheWrite +
-      usage.outputTokens * p.output) /
+    (noCacheInput * p.input * multiplicadorEntrada +
+      usage.cacheReadTokens * p.cacheRead * multiplicadorEntrada +
+      usage.cacheWriteTokens * cacheWrite * multiplicadorEntrada +
+      usage.outputTokens * p.output * multiplicadorSaida) /
     1_000_000;
   return usd * 100;
 }

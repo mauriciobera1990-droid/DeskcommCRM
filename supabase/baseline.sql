@@ -44412,3 +44412,35 @@ update public.agent_inbox_items i
 create unique index if not exists agent_inbox_event_dead_aberto_unico
   on public.agent_inbox_items (organization_id, kind, title)
   where status = 'open' and kind = 'event_dead';
+
+-- ---- catálogo OpenAI GPT-6 Luna (migration 0492) ----
+-- ID, contexto, capacidades e preços conferidos na página oficial do modelo
+-- em 2026-09-29. Preço curto: US$ 0,10/US$ 0,50 por milhão; acima de 272 mil
+-- tokens de entrada, a tarifa da API é 2x em entrada/cache e 1,5x em saída.
+insert into public.ai_models
+  (provider, model_id, display_name, description, context_window,
+   input_price_per_million_cents, output_price_per_million_cents,
+   supports_tools, supports_vision)
+values
+  ('openai', 'gpt-6-luna', 'GPT-6 Luna',
+   'Modelo GPT-6 eficiente para tarefas de volume, com ferramentas e imagens. A tarifa de contexto longo começa acima de 272 mil tokens de entrada.',
+   1050000, 10, 50, true, true)
+on conflict (provider, model_id) do update set
+  display_name = excluded.display_name,
+  description = excluded.description,
+  context_window = excluded.context_window,
+  input_price_per_million_cents = excluded.input_price_per_million_cents,
+  output_price_per_million_cents = excluded.output_price_per_million_cents,
+  supports_tools = excluded.supports_tools,
+  supports_vision = excluded.supports_vision,
+  deprecated_at = null;
+
+insert into public.ai_pricing
+  (model, prompt_cents_per_million_tokens, completion_cents_per_million_tokens, notes)
+values
+  ('gpt-6-luna', 10, 50, 'catálogo 0492 — tarifa Standard até 272K; contexto longo escalonado; developers.openai.com/api/docs/models/gpt-6-luna, medido em 2026-09-29')
+on conflict (model) do update set
+  prompt_cents_per_million_tokens = excluded.prompt_cents_per_million_tokens,
+  completion_cents_per_million_tokens = excluded.completion_cents_per_million_tokens,
+  notes = excluded.notes,
+  superseded_at = null;
